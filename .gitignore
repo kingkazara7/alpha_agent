@@ -1,0 +1,16 @@
+# Security 
+.env
+
+# Vector Database 
+research_db/
+
+# Python Cache & Environments
+__pycache__/
+*.pyc
+.venv/
+env/
+venv/
+*.log
+
+# OS generated files
+.DS_Store
