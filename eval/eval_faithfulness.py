@@ -64,17 +64,38 @@ def build_evidence(doc_ids, corpus_by_id):
     return "\n\n".join(parts)
 
 
-def get_judge():
-    """Return a callable(prompt)->str, or None if no key is configured."""
+def _judge_anthropic():
+    key = os.environ.get("ANTHROPIC_API_KEY")
+    if not key:
+        return None
+    try:
+        import anthropic
+    except ImportError:
+        return None
+    model = os.environ.get("EVAL_JUDGE_MODEL", "claude-sonnet-4-5")
+    client = anthropic.Anthropic(api_key=key)
+
+    def _call(prompt):
+        resp = client.messages.create(
+            model=model,
+            max_tokens=1024,
+            temperature=0,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return "".join(b.text for b in resp.content if getattr(b, "type", "") == "text").strip()
+
+    return _call, f"anthropic:{model}"
+
+
+def _judge_openai():
     key = os.environ.get("OPENAI_API_KEY")
-    model = os.environ.get("EVAL_JUDGE_MODEL", "gpt-4o-mini")
     if not key:
         return None
     try:
         from openai import OpenAI
     except ImportError:
-        print("(judge needs `pip install openai`)")
         return None
+    model = os.environ.get("EVAL_JUDGE_MODEL", "gpt-4o-mini")
     client = OpenAI(api_key=key)
 
     def _call(prompt):
@@ -85,7 +106,32 @@ def get_judge():
         )
         return (resp.choices[0].message.content or "").strip()
 
-    return _call
+    return _call, f"openai:{model}"
+
+
+def get_judge():
+    """Return (callable(prompt)->str, name), or None if nothing is usable.
+
+    The judge must be a DIFFERENT model family from the generator (DeepSeek)
+    and the auditor (Gemini) to avoid self-preference bias, so Anthropic is
+    preferred here. Each candidate is smoke-tested before use so an exhausted
+    quota falls through to the next provider instead of crashing the suite.
+    """
+    order = os.environ.get("EVAL_JUDGE_PROVIDER", "anthropic,openai").split(",")
+    builders = {"anthropic": _judge_anthropic, "openai": _judge_openai}
+    for name in order:
+        built = builders.get(name.strip(), lambda: None)()
+        if not built:
+            continue
+        call, label = built
+        try:
+            call("Reply with the single word: OK")
+        except Exception as exc:
+            print(f"(judge {label} unavailable: {type(exc).__name__})")
+            continue
+        print(f"(judge = {label})")
+        return call
+    return None
 
 
 def evaluate(use_judge=False, verbose=True):

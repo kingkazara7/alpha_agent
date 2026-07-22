@@ -36,10 +36,20 @@ def main():
         retrieval = None
 
     # ---- Layer 2: faithfulness (rule half free, judge half optional) ----
-    faith = eval_faithfulness.evaluate(use_judge=args.judge)
+    try:
+        faith = eval_faithfulness.evaluate(use_judge=args.judge)
+    except Exception as exc:
+        print(f"\nFAITHFULNESS judge half failed ({type(exc).__name__}: {exc});"
+              " falling back to the rule half only")
+        faith = eval_faithfulness.evaluate(use_judge=False)
 
     # ---- Layer 3: auditor value-add (needs GEMINI_API_KEY) ----
-    auditor = eval_auditor.evaluate() if args.judge else None
+    auditor = None
+    if args.judge:
+        try:
+            auditor = eval_auditor.evaluate()
+        except Exception as exc:
+            print(f"\nAUDITOR EVAL failed: {type(exc).__name__}: {exc}")
     if not args.judge:
         print("\nAUDITOR EVAL: skipped (pass --judge to run)")
 

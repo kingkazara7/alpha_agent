@@ -72,8 +72,16 @@ Two halves:
 `reports.jsonl` includes one deliberately hallucinated report so you can confirm
 the metric discriminates instead of passing everything.
 
-Current result (rule half): **3/3 faithful reports pass, 1/1 hallucinated caught**
-(flags the fabricated `31.7`, `35.0`, `40`, `47`).
+Current result:
+
+| | rule (numbers) | judge faithfulness |
+|---|---|---|
+| 3 faithful reports | 3/3 pass | **1.00** |
+| 1 hallucinated report | caught (`31.7`, `35.0`, `40`, `47`) | **0.11** |
+
+Judge used: `anthropic:claude-sonnet-4-5` — a third family, distinct from the
+generator (DeepSeek) and the auditor (Gemini). The 1.00 vs 0.11 gap confirms the
+metric discriminates rather than rubber-stamping.
 
 ### Layer 3 — auditor value-add (`eval_auditor.py`)
 The pointed question about this pipeline: `auditor_node` appends
@@ -88,6 +96,29 @@ This layer injects a fabricated claim into an otherwise faithful draft, runs the
 - `false_assurance_rate` — **stamped "Verified" while the fabrication survived**
 
 That last number is the one that matters. Needs `GEMINI_API_KEY`.
+
+**Measured result (3 injected drafts, `gemini-3-flash-preview`):**
+
+| metric | value |
+|---|---|
+| catch rate | **0%** (0 of 3 fabrications removed or flagged) |
+| stamp rate | **100%** |
+| **false assurance rate** | **100%** |
+
+Every fabricated figure (`45`, `9.8`, `7.3`, `38`, `6.1`) survived the audit, and
+every report was still stamped *"Verified by Alpha-Stream Auditor"*.
+
+**Conclusion: the auditor node is empirically a rubber stamp.** It reformats and
+polishes, but it does not detect injected fabrications — and it asserts
+"Verified" regardless. In a finance context that is worse than having no stamp,
+because it implies an assurance that nothing performs. Do not describe this node
+as a verification or eval step; it is an inline reformatter.
+
+**Fix direction:** have the auditor return a *structured verdict*
+(`pass` / `flagged` + reason codes) instead of free text, give it the retrieved
+evidence to check against (right now it only sees the draft, with no evidence to
+compare to — which is likely why it cannot catch anything), only stamp on a
+genuine pass, and re-run this eval to confirm the catch rate actually moves.
 
 ## Two production bugs this suite exposed
 
